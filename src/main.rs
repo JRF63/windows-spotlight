@@ -84,7 +84,7 @@ impl WinHasher {
             };
             hash_result.reserve_exact(hash_result_size as usize);
             unsafe{ hash_result.set_len(hash_result_size as usize) };
-            
+
             Ok(())
         };
 
@@ -97,7 +97,7 @@ impl WinHasher {
                     hash_result
                 })
             }
-            Err(status) => {
+            Err(e) => {
                 unsafe {
                     if rollback >= 1 {
                         bcrypt::BCryptCloseAlgorithmProvider(alg_handle, 0);
@@ -106,17 +106,17 @@ impl WinHasher {
                         bcrypt::BCryptDestroyHash(hash_handle);
                     }
                 }
-                Err(status)
+                Err(e)
             }
         }
     }
 
-    pub fn hash_object(&mut self, object: &mut [u8]) -> Result<Vec<u8>, i32> {
+    pub fn hash_object<T>(&mut self, object: &mut [T]) -> Result<Vec<u8>, i32> {
         let mut inner_fn = || -> Result<(), i32> {
             match unsafe { bcrypt::BCryptHashData(
                 self.hash_handle,
-                object.as_mut_ptr(),
-                object.len() as u32,
+                object.as_mut_ptr() as *mut u8,
+                (object.len() * std::mem::size_of::<T>()) as u32,
                 0)
             } {
                 ntstatus::STATUS_SUCCESS => (),
@@ -132,6 +132,7 @@ impl WinHasher {
                 ntstatus::STATUS_SUCCESS => (),
                 e => return Err(e)
             };
+
             Ok(())
         };
 
@@ -155,18 +156,30 @@ impl Drop for WinHasher {
 }
 
 fn main() {
-    let mut msg1 = vec![0x61, 0x62, 0x63];
-    let mut msg2 = vec![0x61, 0x62, 0x63];
-    let mut hasher = WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create");
+    let mut msg1: Vec<u8> = vec![0x61, 0x62, 0x63];
+    let mut msg2: Vec<u8> = vec![0x61, 0x62, 0x63];
+    let mut msg3 = String::from("hello");
+    let mut hasher = WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create hasher");
     if let Ok(result) = hasher.hash_object(&mut msg1) {
         for i in result {
-            print!{"{:x}", i}
+            print!{"{:02x}", i}
         }
-    }  
-    println!("");
+        println!("");
+    }
     if let Ok(result) = hasher.hash_object(&mut msg2) {
         for i in result {
-            print!{"{:x}", i}
+            print!{"{:02x}", i}
+        }
+        println!("");
+    }
+    
+    unsafe {
+        let mut slice = std::slice::from_raw_parts_mut(msg3.as_mut_ptr(), msg3.len());
+        if let Ok(result) = hasher.hash_object(&mut slice) {
+            for i in result {
+                print!{"{:02x}", i}
+            }
+            println!("");
         }
     }
 }
