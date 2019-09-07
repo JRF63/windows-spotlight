@@ -22,125 +22,120 @@ impl WinHasher {
             wchar_str
         }
 
-        unsafe fn inner_fn(hash_id: &str) -> Result<WinHasher, i32> {
-            let mut alg_handle = std::ptr::null_mut();
-            let mut hash_handle = std::ptr::null_mut();
-            let mut hash_data: Vec<u8> = vec![];
-            let mut hash_result: Vec<u8>  = vec![];
+        let mut alg_handle = std::ptr::null_mut();
+        let mut hash_handle = std::ptr::null_mut();
+        let mut hash_data: Vec<u8> = vec![];
+        let mut hash_result: Vec<u8>  = vec![];
 
-            let mut rollback = 0;
+        let mut rollback = 0;
 
-            let mut helper_fn = || -> Result<(), i32> {
-                let mut data = 0;
-                let mut status;
+        let mut helper_fn = || -> Result<(), i32> {
+            let mut data = 0;
 
-                status = bcrypt::BCryptOpenAlgorithmProvider(
-                    &mut alg_handle,
-                    to_wchar(hash_id).as_ptr(),
-                    std::ptr::null_mut(),
-                    bcrypt::BCRYPT_HASH_REUSABLE_FLAG);
-                match status {
-                    ntstatus::STATUS_SUCCESS => rollback += 1,
-                    _ => return Err(status)
-                };
-
-                let mut hash_data_size: u32 = 0;
-                status = bcrypt::BCryptGetProperty(
-                    alg_handle,
-                    to_wchar(bcrypt::BCRYPT_OBJECT_LENGTH).as_ptr(),
-                    (&mut hash_data_size as *mut u32) as *mut u8,
-                    32, // size of DWORD
-                    &mut data,
-                    0);
-                match status {
-                    ntstatus::STATUS_SUCCESS => (),
-                    _ => return Err(status)
-                };
-                hash_data.reserve_exact(hash_data_size as usize);
-                hash_data.set_len(hash_data_size as usize);
-
-                status = bcrypt::BCryptCreateHash(
-                    alg_handle,
-                    &mut hash_handle,
-                    hash_data.as_mut_ptr(),
-                    hash_data_size.into(),
-                    std::ptr::null_mut(),
-                    0,
-                    0);
-                match status {
-                    ntstatus::STATUS_SUCCESS => rollback += 1,
-                    _ => return Err(status)
-                };
-
-                let mut hash_result_size: u32 = 0;
-                status = bcrypt::BCryptGetProperty(
-                    alg_handle,
-                    to_wchar(bcrypt::BCRYPT_HASH_LENGTH).as_ptr(),
-                    (&mut hash_result_size as *mut u32) as *mut u8,
-                    32, // size of DWORD
-                    &mut data,
-                    0);
-                match status {
-                    ntstatus::STATUS_SUCCESS => (),
-                    _ => return Err(status)
-                };
-                hash_result.reserve_exact(hash_result_size as usize);
-                hash_result.set_len(hash_result_size as usize);
-                Ok(())
+            match unsafe { bcrypt::BCryptOpenAlgorithmProvider(
+                &mut alg_handle,
+                to_wchar(hash_id).as_ptr(),
+                std::ptr::null_mut(),
+                bcrypt::BCRYPT_HASH_REUSABLE_FLAG)
+            } {
+                ntstatus::STATUS_SUCCESS => rollback += 1,
+                e => return Err(e)
             };
 
-            match helper_fn() {
-                Ok(()) => {
-                    Ok(WinHasher {
-                        alg_handle,
-                        hash_handle,
-                        hash_data,
-                        hash_result
-                    })
-                }
-                Err(status) => {
+            let mut hash_data_size: u32 = 0;
+            match unsafe { bcrypt::BCryptGetProperty(
+                alg_handle,
+                to_wchar(bcrypt::BCRYPT_OBJECT_LENGTH).as_ptr(),
+                (&mut hash_data_size as *mut u32) as *mut u8,
+                32, // size of DWORD
+                &mut data,
+                0)
+            } {
+                ntstatus::STATUS_SUCCESS => (),
+                e => return Err(e)
+            };
+            hash_data.reserve_exact(hash_data_size as usize);
+            unsafe{ hash_data.set_len(hash_data_size as usize) };
+
+            match unsafe { bcrypt::BCryptCreateHash(
+                alg_handle,
+                &mut hash_handle,
+                hash_data.as_mut_ptr(),
+                hash_data_size.into(),
+                std::ptr::null_mut(),
+                0,
+                0)
+            } {
+                ntstatus::STATUS_SUCCESS => rollback += 1,
+                e => return Err(e)
+            };
+
+            let mut hash_result_size: u32 = 0;
+            match unsafe { bcrypt::BCryptGetProperty(
+                alg_handle,
+                to_wchar(bcrypt::BCRYPT_HASH_LENGTH).as_ptr(),
+                (&mut hash_result_size as *mut u32) as *mut u8,
+                32, // size of DWORD
+                &mut data,
+                0)
+            } {
+                ntstatus::STATUS_SUCCESS => (),
+                e => return Err(e)
+            };
+            hash_result.reserve_exact(hash_result_size as usize);
+            unsafe{ hash_result.set_len(hash_result_size as usize) };
+            
+            Ok(())
+        };
+
+        match helper_fn() {
+            Ok(()) => {
+                Ok(WinHasher {
+                    alg_handle,
+                    hash_handle,
+                    hash_data,
+                    hash_result
+                })
+            }
+            Err(status) => {
+                unsafe {
                     if rollback >= 1 {
                         bcrypt::BCryptCloseAlgorithmProvider(alg_handle, 0);
                     }
                     if rollback >= 2 {
                         bcrypt::BCryptDestroyHash(hash_handle);
                     }
-                    Err(status)
                 }
+                Err(status)
             }
         }
-
-        let result = unsafe { inner_fn(hash_id) };
-        result
     }
 
     pub fn hash_object(&mut self, object: &mut [u8]) -> Result<Vec<u8>, i32> {
-        unsafe fn inner_fn(hasher: &mut WinHasher, object: &mut [u8]) -> Result<(), i32> {
-            let mut status;
-            status = bcrypt::BCryptHashData(
-                hasher.hash_handle,
+        let mut inner_fn = || -> Result<(), i32> {
+            match unsafe { bcrypt::BCryptHashData(
+                self.hash_handle,
                 object.as_mut_ptr(),
                 object.len() as u32,
-                0);
-            match status {
+                0)
+            } {
                 ntstatus::STATUS_SUCCESS => (),
-                _ => return Err(status)
+                e => return Err(e)
             };
 
-            status = bcrypt::BCryptFinishHash(
-                hasher.hash_handle,
-                hasher.hash_result.as_mut_ptr(),
-                hasher.hash_result.len() as u32,
-                0);
-            match status {
+            match unsafe { bcrypt::BCryptFinishHash(
+                self.hash_handle,
+                self.hash_result.as_mut_ptr(),
+                self.hash_result.len() as u32,
+                0)
+            } {
                 ntstatus::STATUS_SUCCESS => (),
-                _ => return Err(status)
+                e => return Err(e)
             };
             Ok(())
-        }
+        };
 
-        let result = unsafe { (inner_fn(self, object)) };
-        match result {
+        match inner_fn() {
             Ok(_) => {
                 let duplicate = self.hash_result.clone();
                 Ok(duplicate)
