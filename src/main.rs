@@ -1,192 +1,112 @@
 extern crate winapi;
 
+use std::io::prelude::*;
+use std::collections::HashSet;
+
 use winapi::shared::*;
 
-#[allow(dead_code)]
-struct WinHasher {
-    alg_handle: bcrypt::BCRYPT_ALG_HANDLE,
-    hash_handle: bcrypt::BCRYPT_HASH_HANDLE,
-    hash_data: Vec<u8>,
-    hash_result: Vec<u8>
-}
+// fn is_jpg(file: &mut std::fs::File) -> bool {
+//     const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
+//     let mut buf = vec![0; 12];
+//     let result = match file.read_exact(&mut buf) {
+//         Ok(_) => buf == JPG_SIG,
+//         Err(_) => false
+//     };
+//     file.seek(std::io::SeekFrom::Start(0)).expect("Failed to seek");
+//     result
+// }
 
-impl WinHasher {
-    pub fn new(hash_id: &str) -> Result<WinHasher, i32> {
-
-        fn to_wchar(str_id: &str) -> Vec<u16> {
-            use std::ffi::OsStr;
-            use std::iter::once;
-            use std::os::windows::ffi::OsStrExt;
-            // create a WCHAR str and append \0 to the end
-            let wchar_str: Vec<u16> = OsStr::new(str_id).encode_wide().chain(once(0)).collect();
-            wchar_str
-        }
-
-        let mut alg_handle = std::ptr::null_mut();
-        let mut hash_handle = std::ptr::null_mut();
-        let mut hash_data: Vec<u8> = vec![];
-        let mut hash_result: Vec<u8>  = vec![];
-
-        let mut rollback = 0;
-
-        let mut helper_fn = || -> Result<(), i32> {
-            let mut data = 0;
-
-            match unsafe {
-                bcrypt::BCryptOpenAlgorithmProvider(
-                    &mut alg_handle,
-                    to_wchar(hash_id).as_ptr(),
-                    std::ptr::null_mut(),
-                    bcrypt::BCRYPT_HASH_REUSABLE_FLAG)
-            } {
-                ntstatus::STATUS_SUCCESS => rollback += 1,
-                e => return Err(e)
-            };
-
-            let mut hash_data_size: u32 = 0;
-            match unsafe {
-                bcrypt::BCryptGetProperty(
-                    alg_handle,
-                    to_wchar(bcrypt::BCRYPT_OBJECT_LENGTH).as_ptr(),
-                    (&mut hash_data_size as *mut u32) as *mut u8,
-                    32, // size of DWORD
-                    &mut data,
-                    0)
-            } {
-                ntstatus::STATUS_SUCCESS => {
-                    hash_data.reserve_exact(hash_data_size as usize);
-                    unsafe{ hash_data.set_len(hash_data_size as usize) };
-                },
-                e => return Err(e)
-            };
-
-            match unsafe {
-                bcrypt::BCryptCreateHash(
-                    alg_handle,
-                    &mut hash_handle,
-                    hash_data.as_mut_ptr(),
-                    hash_data_size.into(),
-                    std::ptr::null_mut(),
-                    0,
-                    0)
-            } {
-                ntstatus::STATUS_SUCCESS => rollback += 1,
-                e => return Err(e)
-            };
-
-            let mut hash_result_size: u32 = 0;
-            match unsafe {
-                bcrypt::BCryptGetProperty(
-                    alg_handle,
-                    to_wchar(bcrypt::BCRYPT_HASH_LENGTH).as_ptr(),
-                    (&mut hash_result_size as *mut u32) as *mut u8,
-                    32, // size of DWORD
-                    &mut data,
-                    0)
-            } {
-                ntstatus::STATUS_SUCCESS => {
-                    hash_result.reserve_exact(hash_result_size as usize);
-                    unsafe{ hash_result.set_len(hash_result_size as usize) };
-                },
-                e => return Err(e)
-            };
-
-            Ok(())
-        };
-
-        match helper_fn() {
-            Ok(()) => {
-                Ok(WinHasher {
-                    alg_handle,
-                    hash_handle,
-                    hash_data,
-                    hash_result
-                })
-            }
-            Err(e) => {
-                unsafe {
-                    if rollback >= 1 {
-                        bcrypt::BCryptCloseAlgorithmProvider(alg_handle, 0);
-                    }
-                    if rollback >= 2 {
-                        bcrypt::BCryptDestroyHash(hash_handle);
-                    }
-                }
-                Err(e)
-            }
-        }
-    }
-
-    pub fn update<T>(&mut self, object: &mut [T]) -> Result<(), i32> {
-        match unsafe {
-            bcrypt::BCryptHashData(
-                self.hash_handle,
-                object.as_mut_ptr() as *mut u8,
-                (object.len() * std::mem::size_of::<T>()) as u32,
-                0)
-        } {
-            ntstatus::STATUS_SUCCESS => Ok(()),
-            e => return Err(e)
-        }
-    }
-
-    pub fn digest(&mut self) -> Result<Vec<u8>, i32> {
-        match unsafe {
-            bcrypt::BCryptFinishHash(
-                self.hash_handle,
-                self.hash_result.as_mut_ptr(),
-                self.hash_result.len() as u32,
-                0)
-        } {
-            ntstatus::STATUS_SUCCESS => {
-                Ok(self.hash_result.clone())
-            },
-            e => return Err(e)
-        }
-    }
-}
-
-impl Drop for WinHasher {
-    fn drop(&mut self) {
-        unsafe {
-            bcrypt::BCryptCloseAlgorithmProvider(self.alg_handle, 0);
-            bcrypt::BCryptDestroyHash(self.hash_handle);
-        }
-    }
-}
-
-fn main() {
-    let mut msg1: Vec<u8> = vec![0x61, 0x62, 0x63];
-    let mut msg2: Vec<u8> = vec![0x61, 0x62, 0x63];
-    let mut msg3 = String::from("hello");
-    let mut hasher = WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create hasher");
+fn is_landscape_jpg(file: &mut std::fs::File) -> bool {
+    const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
+    let mut buf = vec![0; 12];
+    let is_jpg = match file.read_exact(&mut buf) {
+        Ok(_) => buf == JPG_SIG,
+        Err(_) => false
+    };
     
-    if let Ok(()) = &hasher.update(&mut msg1) {
-        if let Ok(result) = &hasher.digest() {
-            for i in result {
-                print!{"{:02x}", i}
+    if is_jpg {
+        file.seek(std::io::SeekFrom::Start(163)).expect("Failed to seek");
+        buf.resize(4, 0);
+        if let Ok(_) = file.read_exact(&mut buf) {
+            let height = &buf[..2];
+            let width = &buf[2..];
+            if width > height {
+                file.seek(std::io::SeekFrom::Start(0)).expect("Failed to seek");
+                return true;
             }
-            println!("");
         }
     }
-    if let Ok(()) = &hasher.update(&mut msg2) {
-        if let Ok(result) = &hasher.digest() {
-            for i in result {
-                print!{"{:02x}", i}
-            }
-            println!("");
-        }
-    }
-    
-    unsafe {
-        let mut slice = std::slice::from_raw_parts_mut(msg3.as_mut_ptr(), msg3.len());
-        if let Ok(()) = &hasher.update(&mut slice) {
-            if let Ok(result) = &hasher.digest() {
-                for i in result {
-                    print!{"{:02x}", i}
+    file.seek(std::io::SeekFrom::Start(0)).expect("Failed to seek");
+    false
+}
+
+fn hash_files(files: &[std::fs::DirEntry]) -> std::io::Result<HashSet<Vec<u8>>> {
+    let mut hasher = spotlight::WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create hasher");
+    let mut chunk_set: HashSet<Vec<u8>> = HashSet::new();
+    let mut buf = vec![0; 4096];
+
+    for entry in files {
+        let mut file = std::fs::File::open(entry.path())?;
+        if is_landscape_jpg(&mut file) {
+            // let mut contents = vec![];
+            // file.read_to_end(&mut contents)?; // split to small reads and updates
+            // hasher.update(&mut contents).expect("Failed to update hash");
+            
+            while let Ok(size) = file.read(&mut buf) {
+                if size == 0 {
+                    break;
                 }
-                println!("");
+                hasher.update(&mut buf[..size]).expect("Failed to update hash");
             }
+            chunk_set.insert(hasher.digest().expect("Failed to get hash digest"));
+
+            // let hash = hasher.digest().expect("Failed to get hash digest");
+            // let hash_str: String = hash.iter().map(|&i| format!("{:02x}", i)).collect();
+            // println!("{:?} {}", entry.path(), hash_str);
+            // chunk_set.insert(hash);
         }
     }
+
+    Ok(chunk_set)
+}
+
+fn main() -> std::io::Result<()> {
+    const CHUNK_SIZE: usize = 8;
+    let spotlight_dir = std::path::Path::new(r#"C:\Users\Rafael\AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets"#);
+    let save_dir = std::path::Path::new(r#"C:\Users\Rafael\Pictures\Spotlight"#);
+    // find saved file first
+
+    let mut search_set: HashSet<Vec<u8>> = HashSet::new();
+
+    let is_file = |entry: std::io::Result<std::fs::DirEntry>| -> Option<std::fs::DirEntry> {
+        if let Ok(entry) = entry {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    return Some(entry);
+                }
+            }
+        }
+        None
+    };
+    let save_dir_entries = save_dir.read_dir().expect("read_dir call failed")
+                                   .filter_map(is_file)
+                                   .collect::<Vec<_>>();
+
+    for chunk in save_dir_entries.chunks(CHUNK_SIZE) {
+        if let Ok(chunk_set) = hash_files(chunk) {
+            search_set.extend(chunk_set);
+        }
+    }
+
+    // let spotlight_dir_entries = spotlight_dir.read_dir().expect("read_dir call failed")
+    //                                          .filter_map(is_file)
+    //                                          .collect::<Vec<_>>();
+
+    // for chunk in spotlight_dir_entries.chunks(CHUNK_SIZE) {
+
+    // }
+
+    println!("Length of set {}", search_set.len());
+
+    Ok(())
 }
