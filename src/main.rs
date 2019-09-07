@@ -7,8 +7,7 @@ struct WinHasher {
     alg_handle: bcrypt::BCRYPT_ALG_HANDLE,
     hash_handle: bcrypt::BCRYPT_HASH_HANDLE,
     hash_data: Vec<u8>,
-    hash_result: Vec<u8>,
-    hash_result_size: u32
+    hash_result: Vec<u8>
 }
 
 impl WinHasher {
@@ -18,7 +17,7 @@ impl WinHasher {
             use std::ffi::OsStr;
             use std::iter::once;
             use std::os::windows::ffi::OsStrExt;
-            // create an WCHAR str and append \0 to the end
+            // create a WCHAR str and append \0 to the end
             let wchar_str: Vec<u16> = OsStr::new(str_id).encode_wide().chain(once(0)).collect();
             wchar_str
         }
@@ -28,12 +27,11 @@ impl WinHasher {
             let mut hash_handle = std::ptr::null_mut();
             let mut hash_data: Vec<u8> = vec![];
             let mut hash_result: Vec<u8>  = vec![];
-            let mut hash_result_size: u32 = 0;
 
             let mut rollback = 0;
 
             let mut helper_fn = || -> Result<(), i32> {
-                
+                let mut data = 0;
                 let mut status;
 
                 status = bcrypt::BCryptOpenAlgorithmProvider(
@@ -46,21 +44,19 @@ impl WinHasher {
                     _ => return Err(status)
                 };
 
-                let mut data1 = 0;
                 let mut hash_data_size: u32 = 0;
                 status = bcrypt::BCryptGetProperty(
                     alg_handle,
                     to_wchar(bcrypt::BCRYPT_OBJECT_LENGTH).as_ptr(),
                     (&mut hash_data_size as *mut u32) as *mut u8,
                     32, // size of DWORD
-                    &mut data1,
+                    &mut data,
                     0);
                 match status {
                     ntstatus::STATUS_SUCCESS => (),
                     _ => return Err(status)
                 };
-                
-                hash_data = Vec::with_capacity(hash_data_size as usize);
+                hash_data.reserve_exact(hash_data_size as usize);
                 hash_data.set_len(hash_data_size as usize);
 
                 status = bcrypt::BCryptCreateHash(
@@ -76,19 +72,19 @@ impl WinHasher {
                     _ => return Err(status)
                 };
 
-                let mut data2 = 0;
+                let mut hash_result_size: u32 = 0;
                 status = bcrypt::BCryptGetProperty(
                     alg_handle,
                     to_wchar(bcrypt::BCRYPT_HASH_LENGTH).as_ptr(),
                     (&mut hash_result_size as *mut u32) as *mut u8,
                     32, // size of DWORD
-                    &mut data2,
+                    &mut data,
                     0);
                 match status {
                     ntstatus::STATUS_SUCCESS => (),
                     _ => return Err(status)
                 };
-                hash_result = Vec::with_capacity(hash_result_size as usize);
+                hash_result.reserve_exact(hash_result_size as usize);
                 hash_result.set_len(hash_result_size as usize);
                 Ok(())
             };
@@ -99,8 +95,7 @@ impl WinHasher {
                         alg_handle,
                         hash_handle,
                         hash_data,
-                        hash_result,
-                        hash_result_size
+                        hash_result
                     })
                 }
                 Err(status) => {
@@ -135,7 +130,7 @@ impl WinHasher {
             status = bcrypt::BCryptFinishHash(
                 hasher.hash_handle,
                 hasher.hash_result.as_mut_ptr(),
-                hasher.hash_result_size.into(),
+                hasher.hash_result.len() as u32,
                 0);
             match status {
                 ntstatus::STATUS_SUCCESS => (),
@@ -165,12 +160,18 @@ impl Drop for WinHasher {
 }
 
 fn main() {
-    let mut msg = vec![0x61, 0x62, 0x63];
-    if let Ok(mut hasher) = WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM) {
-        if let Ok(result) = hasher.hash_object(&mut msg) {
-            for i in result {
-                print!{"{:x}", i}
-            }
+    let mut msg1 = vec![0x61, 0x62, 0x63];
+    let mut msg2 = vec![0x61, 0x62, 0x63];
+    let mut hasher = WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create");
+    if let Ok(result) = hasher.hash_object(&mut msg1) {
+        for i in result {
+            print!{"{:x}", i}
         }
-    };
+    }  
+    println!("");
+    if let Ok(result) = hasher.hash_object(&mut msg2) {
+        for i in result {
+            print!{"{:x}", i}
+        }
+    }
 }
