@@ -1,9 +1,8 @@
 extern crate winapi;
 
-use std::mem;
-    
 use winapi::shared::*;
 
+#[allow(dead_code)]
 struct WinHasher {
     alg_handle: bcrypt::BCRYPT_ALG_HANDLE,
     hash_handle: bcrypt::BCRYPT_HASH_HANDLE,
@@ -34,7 +33,7 @@ impl WinHasher {
             let mut rollback = 0;
 
             let mut helper_fn = || -> Result<(), i32> {
-                let mut data = 0;
+                
                 let mut status;
 
                 status = bcrypt::BCryptOpenAlgorithmProvider(
@@ -47,20 +46,21 @@ impl WinHasher {
                     _ => return Err(status)
                 };
 
+                let mut data1 = 0;
                 let mut hash_data_size: u32 = 0;
                 status = bcrypt::BCryptGetProperty(
                     alg_handle,
                     to_wchar(bcrypt::BCRYPT_OBJECT_LENGTH).as_ptr(),
                     (&mut hash_data_size as *mut u32) as *mut u8,
-                    mem::size_of::<u32>() as u32,
-                    &mut data,
+                    32, // size of DWORD
+                    &mut data1,
                     0);
                 match status {
                     ntstatus::STATUS_SUCCESS => (),
                     _ => return Err(status)
                 };
                 
-                println!("Hash data size: {}", hash_data_size);
+                hash_data = Vec::with_capacity(hash_data_size as usize);
                 hash_data.set_len(hash_data_size as usize);
 
                 status = bcrypt::BCryptCreateHash(
@@ -76,20 +76,20 @@ impl WinHasher {
                     _ => return Err(status)
                 };
 
+                let mut data2 = 0;
                 status = bcrypt::BCryptGetProperty(
                     alg_handle,
                     to_wchar(bcrypt::BCRYPT_HASH_LENGTH).as_ptr(),
                     (&mut hash_result_size as *mut u32) as *mut u8,
-                    mem::size_of::<u32>() as u32,
-                    &mut data,
+                    32, // size of DWORD
+                    &mut data2,
                     0);
                 match status {
                     ntstatus::STATUS_SUCCESS => (),
                     _ => return Err(status)
                 };
-                
+                hash_result = Vec::with_capacity(hash_result_size as usize);
                 hash_result.set_len(hash_result_size as usize);
-
                 Ok(())
             };
 
@@ -125,7 +125,7 @@ impl WinHasher {
             status = bcrypt::BCryptHashData(
                 hasher.hash_handle,
                 object.as_mut_ptr(),
-                (object.len() * mem::size_of::<u8>()) as u32,
+                object.len() as u32,
                 0);
             match status {
                 ntstatus::STATUS_SUCCESS => (),
@@ -167,9 +167,9 @@ impl Drop for WinHasher {
 fn main() {
     let mut msg = vec![0x61, 0x62, 0x63];
     if let Ok(mut hasher) = WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM) {
-        if let Ok(mut result) = hasher.hash_object(&mut msg) {
+        if let Ok(result) = hasher.hash_object(&mut msg) {
             for i in result {
-                println!{"{}", i}
+                print!{"{:x}", i}
             }
         }
     };
