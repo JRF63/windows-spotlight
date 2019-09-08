@@ -88,70 +88,63 @@ impl Iterator for SuffixGenerator {
     }
 }
 
+#[inline(always)]
 fn is_jpg(buf: &[u8]) -> bool {
     const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
     buf == JPG_SIG
 }
 
+#[inline(always)]
 fn is_landscape(buf: &[u8]) -> bool {
     buf[..2] < buf[2..]
 }
 
+#[inline]
+fn hash_if_landscape_jpg(entry: &std::fs::DirEntry) -> Option<Vec<u8>> {
+    let mut hasher = spotlight::WinHasher::new(HASH_ALGORITHM).unwrap();
+    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+
+    let mut file = std::fs::File::open(entry.path()).unwrap();
+    file.read_exact(&mut buf[..12]).expect("Read error");
+    if is_jpg(&buf[..12]) {
+        file.read_exact(&mut buf[12..167]).expect("Read error");
+        if is_landscape(&buf[163..167]) {
+            hasher.update(&mut buf[..167]).unwrap();
+            while let Ok(size) = file.read(&mut buf) {
+                if size == 0 {
+                    break;
+                }
+                hasher.update(&mut buf[..size]).unwrap();
+            }
+            return Some(hasher.digest().unwrap());
+        }
+    }
+    None
+}
+
 fn hash_saved_images(entries: &[std::fs::DirEntry]) -> HashSet<Vec<u8>> {
-    let mut hasher = spotlight::WinHasher::new(HASH_ALGORITHM).expect("Failed to create hasher");
-    let mut buf = vec![0; READ_BUF_SIZE];
     let mut chunk_set: HashSet<Vec<u8>> = HashSet::new();
     
     for entry in entries {
-        let mut file = std::fs::File::open(entry.path()).expect("Cannot open file");
-        file.read_exact(&mut buf[..12]).expect("Read error");
-        if is_jpg(&buf[..12]) {
-            file.read_exact(&mut buf[12..167]).expect("Read error");
-            if is_landscape(&buf[163..167]) {
-                hasher.update(&mut buf[..167]).expect("Failed to update hash");
-                while let Ok(size) = file.read(&mut buf) {
-                    if size == 0 {
-                        break;
-                    }
-                    hasher.update(&mut buf[..size]).expect("Failed to update hash");
-                }
-                chunk_set.insert(hasher.digest().expect("Failed to get hash digest"));
-            }
+        if let Some(digest) = hash_if_landscape_jpg(entry) {
+            chunk_set.insert(digest);
         }
     }
-
     chunk_set
 }
 
-fn find_new_image(search_set: HashSet<Vec<u8>>, entries: &[std::fs::DirEntry]) -> Vec<(std::path::PathBuf, std::time::SystemTime)> {
-    let mut hasher = spotlight::WinHasher::new(HASH_ALGORITHM).expect("Failed to create hasher");
-    let mut buf = vec![0; READ_BUF_SIZE];
+fn find_new_image(search_set: &HashSet<Vec<u8>>, entries: &[std::fs::DirEntry]) -> Vec<(std::path::PathBuf, std::time::SystemTime)> {
     let mut result = vec![];
 
     for entry in entries {
-        let mut file = std::fs::File::open(entry.path()).expect("Cannot open file");
-        file.read_exact(&mut buf[..12]).expect("Read error");
-        if is_jpg(&buf[..12]) {
-            file.read_exact(&mut buf[12..167]).expect("Read error");
-            if is_landscape(&buf[163..167]) {
-                hasher.update(&mut buf[..167]).expect("Failed to update hash");
-                while let Ok(size) = file.read(&mut buf) {
-                    if size == 0 {
-                        break;
-                    }
-                    hasher.update(&mut buf[..size]).expect("Failed to update hash");
-                }
-                let digest = hasher.digest().expect("Failed to get hash digest");
-                if !search_set.contains(&digest) {
-                    let path = entry.path();
-                    let creation_time = entry.metadata().expect("Metadata error")
-                                             .created().expect("Metadata time error");
-                    result.push((path, creation_time));
-                }
+        if let Some(digest) = hash_if_landscape_jpg(entry) {
+            if !search_set.contains(&digest) {
+                let path = entry.path();
+                let creation_time = entry.metadata().unwrap().created().unwrap();
+                result.push((path, creation_time));
             }
         }
     }
-
     result
 }
 
@@ -188,9 +181,7 @@ fn main() {
                                              .collect::<Vec<_>>();
 
     for chunk in spotlight_dir_entries.chunks(CHUNK_SIZE) {
-        let mut copy_set: HashSet<Vec<u8>> = HashSet::new();
-        copy_set.clone_from(&search_set);
-        let mut chunk_images = find_new_image(copy_set, chunk);
+        let mut chunk_images = find_new_image(&search_set, chunk);
         new_images.append(&mut chunk_images);
     }
 
@@ -210,10 +201,13 @@ fn main() {
 
             for dst_path in suffixes.take(100) {
                 if !dst_path.is_file() {
-                    std::fs::copy(&src_path, &dst_path).expect("Cannot copy");
+                    // std::fs::copy(&src_path, &dst_path).expect("Cannot copy file");
+                    dbg!(&dst_path);
                     break;
                 }
             }
         }
     }
+
+    std::process::exit(0);
 }
