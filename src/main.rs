@@ -104,25 +104,27 @@ fn main() {
         }
         None
     };
-    let save_dir_entries = save_dir.read_dir().expect("Cannot read dir")
-                                   .filter_map(is_file_filter)
-                                   .collect::<Vec<_>>();
 
+    // make a vector for chunking
+    let to_file_vec = |path: &std::path::Path| -> Vec<_> {
+        path.read_dir().expect("Cannot read dir")
+        .filter_map(is_file_filter)
+        .collect::<Vec<_>>()
+    };
+
+    let save_dir_entries = to_file_vec(save_dir);
     for chunk in save_dir_entries.chunks(CHUNK_SIZE) {
         let chunk_set = hash_saved_images(chunk);
         search_set.extend(chunk_set);
     }
 
-    let spotlight_dir_entries = spotlight_dir.read_dir().expect("Cannot read dir")
-                                             .filter_map(is_file_filter)
-                                             .collect::<Vec<_>>();
-
+    let spotlight_dir_entries = to_file_vec(spotlight_dir);
     for chunk in spotlight_dir_entries.chunks(CHUNK_SIZE) {
         let mut chunk_images = find_new_image(&search_set, chunk);
         new_images.append(&mut chunk_images);
     }
 
-    println!("New images: {}", &new_images.len());
+    // println!("New images: {}", &new_images.len());
     let mut new_wallpaper: Option<std::path::PathBuf> = None;
 
     for (src_path, sys_time) in new_images {
@@ -140,7 +142,7 @@ fn main() {
             for dst_path in suffixes.take(100) {
                 if !dst_path.is_file() {
                     std::fs::copy(&src_path, &dst_path).expect("Cannot copy file");
-                    dbg!(&dst_path);
+                    // dbg!(&dst_path);
                     new_wallpaper = Some(dst_path);
                     break;
                 }
