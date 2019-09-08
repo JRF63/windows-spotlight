@@ -135,7 +135,7 @@ fn main() {
             let mut path = save_dir.to_path_buf();
             path.push(date_str);
 
-            let suffixes = suffix_gen::SuffixGenerator::new(&path, "jpg");
+            let suffixes = suffix_gen::SuffixGenerator::new(path, "jpg");
 
             for dst_path in suffixes.take(100) {
                 if !dst_path.is_file() {

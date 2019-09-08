@@ -9,20 +9,22 @@ pub struct SuffixGenerator {
 }
 
 impl SuffixGenerator {
-    // use OsString
-    pub fn new(path: &PathBuf, ext: &str) -> SuffixGenerator {
-        let mut path_str: String = path.to_str().expect("Invalid unicode").to_string();
-        let path_array: Vec<u8> = unsafe { path_str.as_bytes_mut().to_vec() };
-        let original_size = path_array.len() as isize;
-        let mut extension = String::from(".");
-        extension.push_str(ext);
-        let ascii_iter = Box::new((97u8..=122u8).chain(std::iter::once(0u8)).cycle());
-        SuffixGenerator {
-            path_array,
-            original_size,
-            extension,
-            array_pos: -1,
-            ascii_lower: ascii_iter
+    pub fn new(path: PathBuf, ext: &str) -> SuffixGenerator {
+        if let Ok(path_string) = path.into_os_string().into_string() {
+            let mut path_array: Vec<u8> = path_string.into_bytes();
+            let original_size = path_array.len() as isize;
+            let mut extension = String::from(".");
+            extension.push_str(ext);
+            let ascii_iter = Box::new((97u8..=122u8).chain(std::iter::once(0u8)).cycle());
+            return SuffixGenerator {
+                path_array,
+                original_size,
+                extension,
+                array_pos: -1,
+                ascii_lower: ascii_iter
+            };
+        } else {
+            panic!("Invalid unicode");
         }
     }
 
@@ -80,7 +82,7 @@ impl Iterator for SuffixGenerator {
 fn test_suffix_gen() {
     let path_buf = PathBuf::from(r#"test-"#);
     let ext = "test";
-    let mut it = SuffixGenerator::new(&path_buf, ext);
+    let mut it = SuffixGenerator::new(path_buf.clone(), ext);
     
     assert_eq!(Some("test-a.test"), it.nth(0).unwrap().to_str());
     assert_eq!(Some("test-z.test"), it.nth(24).unwrap().to_str());
@@ -92,9 +94,9 @@ fn test_suffix_gen() {
     assert_eq!(Some("test-aba.test"), it.nth(25).unwrap().to_str());
     assert_eq!(Some("test-abb.test"), it.nth(0).unwrap().to_str());
     
-    it = SuffixGenerator::new(&path_buf, ext);
+    it = SuffixGenerator::new(path_buf.clone(), ext);
     assert_eq!(Some("test-zz.test"), it.nth(702 - 1).unwrap().to_str());
 
-    it = SuffixGenerator::new(&path_buf, ext);
+    it = SuffixGenerator::new(path_buf.clone(), ext);
     assert_eq!(Some("test-baa.test"), it.nth(1378).unwrap().to_str());
 }
