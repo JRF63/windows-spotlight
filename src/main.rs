@@ -88,29 +88,13 @@ impl Iterator for SuffixGenerator {
     }
 }
 
-fn is_landscape_jpg(file: &mut std::fs::File) -> bool {
+fn is_jpg(buf: &[u8]) -> bool {
     const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
-    let mut buf = vec![0; 12];
-    let is_jpg = match file.read_exact(&mut buf) {
-        Ok(_) => buf == JPG_SIG,
-        Err(_) => false
-    };
-    
-    if is_jpg {
-        // part that checks if in landscape
-        file.seek(std::io::SeekFrom::Start(163)).expect("Failed to seek");
-        buf.resize(4, 0);
-        if let Ok(_) = file.read_exact(&mut buf) {
-            let height = &buf[..2];
-            let width = &buf[2..];
-            if width > height {
-                file.seek(std::io::SeekFrom::Start(0)).expect("Failed to seek");
-                return true;
-            }
-        }
-    }
-    file.seek(std::io::SeekFrom::Start(0)).expect("Failed to seek");
-    false
+    buf == JPG_SIG
+}
+
+fn is_landscape(buf: &[u8]) -> bool {
+    buf[..2] < buf[2..]
 }
 
 fn hash_saved_images(entries: &[std::fs::DirEntry]) -> HashSet<Vec<u8>> {
@@ -120,27 +104,23 @@ fn hash_saved_images(entries: &[std::fs::DirEntry]) -> HashSet<Vec<u8>> {
     
     for entry in entries {
         let mut file = std::fs::File::open(entry.path()).expect("Cannot open file");
-        if is_landscape_jpg(&mut file) {
-            while let Ok(size) = file.read(&mut buf) {
-                if size == 0 {
-                    break;
+        file.read_exact(&mut buf[..12]).expect("Read error");
+        if is_jpg(&buf[..12]) {
+            file.read_exact(&mut buf[12..167]).expect("Read error");
+            if is_landscape(&buf[163..167]) {
+                hasher.update(&mut buf[..167]).expect("Failed to update hash");
+                while let Ok(size) = file.read(&mut buf) {
+                    if size == 0 {
+                        break;
+                    }
+                    hasher.update(&mut buf[..size]).expect("Failed to update hash");
                 }
-                hasher.update(&mut buf[..size]).expect("Failed to update hash");
+                chunk_set.insert(hasher.digest().expect("Failed to get hash digest"));
             }
-            chunk_set.insert(hasher.digest().expect("Failed to get hash digest"));
         }
     }
 
     chunk_set
-}
-
-fn is_jpg(buf: &[u8]) -> bool {
-    const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
-    buf == JPG_SIG
-}
-
-fn is_landscape(buf: &[u8]) -> bool {
-    buf[..2] > buf[2..]
 }
 
 fn find_new_image(search_set: HashSet<Vec<u8>>, entries: &[std::fs::DirEntry]) -> Vec<(std::path::PathBuf, std::time::SystemTime)> {
@@ -150,30 +130,8 @@ fn find_new_image(search_set: HashSet<Vec<u8>>, entries: &[std::fs::DirEntry]) -
 
     for entry in entries {
         let mut file = std::fs::File::open(entry.path()).expect("Cannot open file");
-        // if is_landscape_jpg(&mut file) {
-        //     while let Ok(size) = file.read(&mut buf) {
-        //         if size == 0 {
-        //             break;
-        //         }
-        //         hasher.update(&mut buf[..size]).expect("Failed to update hash");
-        //     }
-        //     let digest = hasher.digest().expect("Failed to get hash digest");
-        //     if !search_set.contains(&digest) {
-        //         let hash_str: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
-        //         dbg!(hash_str);
-
-        //         let path = entry.path();
-        //         let creation_time = entry.metadata().expect("Metadata error")
-        //                                  .created().expect("Metadata time error");
-        //         result.push((path, creation_time));
-        //     }
-        // }
         file.read_exact(&mut buf[..12]).expect("Read error");
         if is_jpg(&buf[..12]) {
-
-            file.seek(std::io::SeekFrom::Start(163)).expect("Failed to seek");
-            panic!("abort");
-
             file.read_exact(&mut buf[12..167]).expect("Read error");
             if is_landscape(&buf[163..167]) {
                 hasher.update(&mut buf[..167]).expect("Failed to update hash");
@@ -185,12 +143,9 @@ fn find_new_image(search_set: HashSet<Vec<u8>>, entries: &[std::fs::DirEntry]) -
                 }
                 let digest = hasher.digest().expect("Failed to get hash digest");
                 if !search_set.contains(&digest) {
-                    let hash_str: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
-                    dbg!(hash_str);
-
                     let path = entry.path();
                     let creation_time = entry.metadata().expect("Metadata error")
-                                            .created().expect("Metadata time error");
+                                             .created().expect("Metadata time error");
                     result.push((path, creation_time));
                 }
             }
@@ -239,6 +194,8 @@ fn main() {
         new_images.append(&mut chunk_images);
     }
 
+    println!("New images: {}", &new_images.len());
+
     for (src_path, sys_time) in new_images {
         if let Ok(duration) = sys_time.duration_since(SystemTime::UNIX_EPOCH) {
             
@@ -251,10 +208,10 @@ fn main() {
 
             let suffixes = SuffixGenerator::new(&path, "jpg");
 
-            for dst_path in suffixes.take(3) {
+            for dst_path in suffixes.take(100) {
                 if !dst_path.is_file() {
-                    // dbg!(&dst_path);
-                    // std::fs::copy(&src_path, &dst_path).expect("Cannot copy");
+                    std::fs::copy(&src_path, &dst_path).expect("Cannot copy");
+                    break;
                 }
             }
         }
