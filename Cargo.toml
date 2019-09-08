@@ -16,3 +16,4 @@ path = "src/main.rs"
 
 [dependencies]
 winapi = { version = "~0.3", features = ["ntstatus", "bcrypt"] }
+chrono = "~0.4"
