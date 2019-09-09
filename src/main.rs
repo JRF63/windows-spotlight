@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use chrono::TimeZone;
 use spotlight::*;
 
-const CHUNK_SIZE: usize = 8;
+const BATCH_SIZE: usize = 8;
 const READ_BUF_SIZE: usize = 4096;
 const HASH_ALGORITHM: &'static str = "SHA256";
 const HASH_SIZE: usize = 32; // SHA256 is 32 bytes
@@ -33,16 +33,13 @@ fn is_landscape(buf: &[u8]) -> bool {
 }
 
 #[inline]
-fn hash_if_landscape_jpg(path: PathBuf) -> Option<Vec<u8>> {
-    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
-    // Uninitialized array. Vec<u8> works here too.
-    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+fn hash_if_landscape_jpg(path: PathBuf, hasher: &mut hasher::WinHasher, buf: &mut [u8; READ_BUF_SIZE]) -> Option<Vec<u8>> {
     const JPG_SIG_END: usize = 12;
     const RESOLUTION_START: usize = 163;
     const RESOLUTION_END: usize = 167;
 
     let mut file = std::fs::File::open(path).unwrap();
-    if let Ok(mut read_size) = file.read(&mut buf) {
+    if let Ok(mut read_size) = file.read(buf) {
         if read_size < JPG_SIG_END {
             if let Ok(_) = file.read_exact(&mut buf[read_size..JPG_SIG_END]) {
                 read_size = JPG_SIG_END;
@@ -62,7 +59,7 @@ fn hash_if_landscape_jpg(path: PathBuf) -> Option<Vec<u8>> {
                 // Hash the read data so far then hash the rest
                 // using a while loop
                 hasher.update(&mut buf[..read_size]).unwrap();
-                while let Ok(size) = file.read(&mut buf) {
+                while let Ok(size) = file.read(buf) {
                     if size == 0 {
                         break;
                     }
@@ -79,7 +76,10 @@ fn hash_if_landscape_jpg(path: PathBuf) -> Option<Vec<u8>> {
 #[test]
 fn test_jpg_hashing() {
     let path = std::path::PathBuf::from(r#"C:\Users\Rafael\Pictures\Spotlight\20190713a.jpg"#);
-    let digest = hash_if_landscape_jpg(path).unwrap();
+    assert!(path.is_file());
+    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+    let digest = hash_if_landscape_jpg(path, &mut hasher, &mut buf).unwrap();
     let hash_string: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
     assert_eq!(hash_string, "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2");
     dbg!(hash_string);
@@ -97,9 +97,11 @@ fn read_saved_hash(mut file: std::fs::File) -> Vec<Vec<u8>> {
 
 fn hash_saved_images(entries: &[DirEntry]) -> HashSet<Vec<u8>> {
     let mut chunk_set: HashSet<Vec<u8>> = HashSet::new();
+    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     
     for entry in entries {
-        if let Some(digest) = hash_if_landscape_jpg(entry.path()) {
+        if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
             chunk_set.insert(digest);
         }
     }
@@ -108,9 +110,11 @@ fn hash_saved_images(entries: &[DirEntry]) -> HashSet<Vec<u8>> {
 
 fn find_new_image(search_set: &HashSet<Vec<u8>>, entries: &[DirEntry]) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
     let mut result = vec![];
+    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
 
     for entry in entries {
-        if let Some(digest) = hash_if_landscape_jpg(entry.path()) {
+        if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
             if !search_set.contains(&digest) {
                 let path = entry.path();
                 let creation_time = entry.metadata().unwrap().created().unwrap();
@@ -157,14 +161,14 @@ fn main() {
         }
     } else {
         let save_dir_entries = to_file_vec(save_dir);
-        for chunk in save_dir_entries.chunks(CHUNK_SIZE) {
+        for chunk in save_dir_entries.chunks(BATCH_SIZE) {
             let chunk_set = hash_saved_images(chunk);
             search_set.extend(chunk_set);
         }
     }
 
     let spotlight_dir_entries = to_file_vec(spotlight_dir);
-    for chunk in spotlight_dir_entries.chunks(CHUNK_SIZE) {
+    for chunk in spotlight_dir_entries.chunks(BATCH_SIZE) {
         let mut chunk_images = find_new_image(&search_set, chunk);
         new_images.append(&mut chunk_images);
     }
