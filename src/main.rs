@@ -131,7 +131,7 @@ fn main() {
         if let Ok(duration) = sys_time.duration_since(SystemTime::UNIX_EPOCH) {
             
             let nsecs = duration.as_nanos();
-            let datetime = chrono::Local.timestamp_nanos(nsecs as i64).naive_local();
+            let datetime = chrono::Local.timestamp_nanos(nsecs as i64);
             let date_str = datetime.format("%Y%m%d").to_string();
             
             let mut path = save_dir.to_path_buf();
