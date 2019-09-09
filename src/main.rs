@@ -96,16 +96,16 @@ fn read_saved_hash(mut file: std::fs::File) -> Vec<Vec<u8>> {
 }
 
 fn hash_saved_images(entries: &[DirEntry]) -> HashSet<Vec<u8>> {
-    let mut chunk_set: HashSet<Vec<u8>> = HashSet::new();
+    let mut result: HashSet<Vec<u8>> = HashSet::new();
     let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
     let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     
     for entry in entries {
         if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
-            chunk_set.insert(digest);
+            result.insert(digest);
         }
     }
-    chunk_set
+    result
 }
 
 fn find_new_image(search_set: &HashSet<Vec<u8>>, entries: &[DirEntry]) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
@@ -161,16 +161,16 @@ fn main() {
         }
     } else {
         let save_dir_entries = to_file_vec(save_dir);
-        for chunk in save_dir_entries.chunks(BATCH_SIZE) {
-            let chunk_set = hash_saved_images(chunk);
-            search_set.extend(chunk_set);
+        for batch in save_dir_entries.chunks(BATCH_SIZE) {
+            let set_batch = hash_saved_images(batch);
+            search_set.extend(set_batch);
         }
     }
 
     let spotlight_dir_entries = to_file_vec(spotlight_dir);
-    for chunk in spotlight_dir_entries.chunks(BATCH_SIZE) {
-        let mut chunk_images = find_new_image(&search_set, chunk);
-        new_images.append(&mut chunk_images);
+    for batch in spotlight_dir_entries.chunks(BATCH_SIZE) {
+        let mut image_batch = find_new_image(&search_set, batch);
+        new_images.append(&mut image_batch);
     }
 
     let mut new_wallpaper: Option<PathBuf> = None;
