@@ -3,8 +3,7 @@ use std::path::PathBuf;
 pub struct SuffixGenerator {
     path_array: Vec<u8>,
     original_size: usize,
-    extension: String,
-    array_pos: usize,
+    extension: String
 }
 
 impl SuffixGenerator {
@@ -21,37 +20,36 @@ impl SuffixGenerator {
         return SuffixGenerator {
             path_array,
             original_size,
-            extension,
-            array_pos: original_size
+            extension
         };
     }
 
     fn make_pathbuf(&mut self) -> Option<PathBuf> {
-        let mut tmp_str: String = String::from_utf8(self.path_array.clone()).unwrap();
-        tmp_str.push_str(&self.extension);
-        Some(PathBuf::from(tmp_str))
+        let mut tmp_string: String = String::from_utf8(self.path_array.clone()).unwrap();
+        tmp_string.push_str(&self.extension);
+        Some(PathBuf::from(tmp_string))
     }
 }
 
 impl Iterator for SuffixGenerator {
     type Item = PathBuf;
     fn next(&mut self) -> Option<Self::Item> {
-        let mut cur_pos = self.array_pos;
+        let mut cur_pos = self.path_array.len() - 1;
         loop {
-            if cur_pos < self.original_size {
-                self.path_array.push(97u8); // push an 'a'
-                self.array_pos += 1;
-                return self.make_pathbuf();
-            }
-
             self.path_array[cur_pos] += 1;
-            // if current char is past 'z', make it an 'a' and
-            // carry over to next position
-            if self.path_array[cur_pos] == 123u8 {
+            // if between 'a' and 'z'
+            if self.path_array[cur_pos] <= 122u8 {
+                return self.make_pathbuf();
+            } else {
+                // else if current char is past 'z', make it an 'a' and
+                // carry over calculation to next position
                 self.path_array[cur_pos] = 97;
                 cur_pos -= 1;
-            } else {
-                return self.make_pathbuf();
+                // not enough space, add new char
+                if cur_pos < self.original_size {
+                    self.path_array.push(97u8);
+                    return self.make_pathbuf();
+                }
             }
         }
     }
