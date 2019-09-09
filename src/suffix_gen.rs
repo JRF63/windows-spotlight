@@ -10,7 +10,7 @@ pub struct SuffixGenerator {
 impl SuffixGenerator {
     pub fn new(path: PathBuf, ext: &str) -> SuffixGenerator {
         let mut path_array: Vec<u8> = path.into_os_string()
-                                          .into_string().expect("Invalid unicode")
+                                          .into_string().unwrap()
                                           .into_bytes();
         let original_size = path_array.len() as usize;
         path_array.push(96u8);
@@ -27,7 +27,7 @@ impl SuffixGenerator {
     }
 
     fn make_pathbuf(&mut self) -> Option<PathBuf> {
-        let mut tmp_str: String = String::from_utf8(self.path_array.clone()).expect("Invalid unicode");
+        let mut tmp_str: String = String::from_utf8(self.path_array.clone()).unwrap();
         tmp_str.push_str(&self.extension);
         Some(PathBuf::from(tmp_str))
     }
