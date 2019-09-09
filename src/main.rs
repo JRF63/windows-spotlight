@@ -19,12 +19,16 @@ const SAVED_HASH: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight\spotlight
 
 #[inline(always)]
 fn is_jpg(buf: &[u8]) -> bool {
+    // The JPG header is in the first 12 bytes of the file
     const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
     buf == JPG_SIG
 }
 
 #[inline(always)]
 fn is_landscape(buf: &[u8]) -> bool {
+    // Tests if height < width. Not sure if this is
+    // true for all JPG files but Windows Spotlight images store the
+    // height in file[163..165] and width in file[165..167].
     buf[..2] < buf[2..]
 }
 
@@ -33,32 +37,52 @@ fn hash_if_landscape_jpg(path: PathBuf) -> Option<Vec<u8>> {
     let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
     // Uninitialized array. Vec<u8> works here too.
     let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+    const JPG_SIG_END: usize = 12;
+    const RESOLUTION_START: usize = 163;
+    const RESOLUTION_END: usize = 167;
 
     let mut file = std::fs::File::open(path).unwrap();
-    // The JPG header is in the first 12 bytes
-    file.read_exact(&mut buf[..12]).unwrap();
-    if is_jpg(&buf[..12]) {
-        // Not sure if this is true for all JPG files but
-        // Windows Spotlight images store the height in file[163..165] and
-        // width in file[165..167]. We're starting from [12..] here so
-        // we don't have to read it again when we're already hashing the file.
-        file.read_exact(&mut buf[12..167]).unwrap();
-        // is_landscape needs only 4 bytes in the aforementioned range
-        if is_landscape(&buf[163..167]) {
-            // Hash the read data so far then hash the rest
-            // using the while loop
-            hasher.update(&mut buf[..167]).unwrap();
-            while let Ok(size) = file.read(&mut buf) {
-                if size == 0 {
-                    break;
-                }
-                hasher.update(&mut buf[..size]).unwrap();
+    if let Ok(mut read_size) = file.read(&mut buf) {
+        if read_size < JPG_SIG_END {
+            if let Ok(_) = file.read_exact(&mut buf[read_size..JPG_SIG_END]) {
+                read_size = JPG_SIG_END;
+            } else {
+                return None;
             }
-            return Some(hasher.digest().unwrap());
+        }
+        if is_jpg(&buf[..JPG_SIG_END]) {
+            if read_size < RESOLUTION_END {
+                if let Ok(_) = file.read_exact(&mut buf[read_size..RESOLUTION_END]) {
+                    read_size = RESOLUTION_END;
+                } else {
+                    return None;
+                }
+            }
+            if is_landscape(&buf[RESOLUTION_START..RESOLUTION_END]) {
+                // Hash the read data so far then hash the rest
+                // using a while loop
+                hasher.update(&mut buf[..read_size]).unwrap();
+                while let Ok(size) = file.read(&mut buf) {
+                    if size == 0 {
+                        break;
+                    }
+                    hasher.update(&mut buf[..size]).unwrap();
+                }
+                return Some(hasher.digest().unwrap());
+            }
         }
     }
     // not a landscape JPG
     None
+}
+
+#[test]
+fn test_jpg_hashing() {
+    let path = std::path::PathBuf::from(r#"C:\Users\Rafael\Pictures\Spotlight\20190713a.jpg"#);
+    let digest = hash_if_landscape_jpg(path).unwrap();
+    let hash_string: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
+    assert_eq!(hash_string, "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2");
+    dbg!(hash_string);
 }
 
 fn read_saved_hash(mut file: std::fs::File) -> Vec<Vec<u8>> {
@@ -145,7 +169,6 @@ fn main() {
         new_images.append(&mut chunk_images);
     }
 
-    // println!("New images: {}", &new_images.len());
     let mut new_wallpaper: Option<PathBuf> = None;
 
     for (src_path, digest, sys_time) in new_images {
