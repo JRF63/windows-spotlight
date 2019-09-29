@@ -156,49 +156,53 @@ impl Drop for WinHasher {
     }
 }
 
-#[test]
-fn test_hasher() {
-    let mut msg1: Vec<u8> = vec![0x61, 0x62, 0x63];
-    let mut msg2: Vec<u8> = vec![0x61, 0x62, 0x63];
-    let mut msg3 = String::from("hello");
-    let mut hasher =
-        WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create hasher");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_hasher() {
+        let mut msg1: Vec<u8> = vec![0x61, 0x62, 0x63];
+        let mut msg2: Vec<u8> = vec![0x61, 0x62, 0x63];
+        let mut msg3 = String::from("hello");
+        let mut hasher =
+            WinHasher::new(bcrypt::BCRYPT_SHA256_ALGORITHM).expect("Failed to create hasher");
 
-    fn to_hex_str(slice: &[u8]) -> String {
-        slice.iter().map(|&i| format!("{:02x}", i)).collect()
-    };
+        fn to_hex_str(slice: &[u8]) -> String {
+            slice.iter().map(|&i| format!("{:02x}", i)).collect()
+        };
 
-    if let Ok(()) = &hasher.update(&mut msg1) {
-        if let Ok(result) = &hasher.digest() {
-            let hash_str = to_hex_str(result);
-            assert_eq!(
-                hash_str,
-                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-            );
-            println!("{}", hash_str);
-        }
-    }
-    if let Ok(()) = &hasher.update(&mut msg2) {
-        if let Ok(result) = &hasher.digest() {
-            let hash_str = to_hex_str(result);
-            assert_eq!(
-                hash_str,
-                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-            );
-            println!("{}", hash_str);
-        }
-    }
-
-    unsafe {
-        let mut slice = std::slice::from_raw_parts_mut(msg3.as_mut_ptr(), msg3.len());
-        if let Ok(()) = &hasher.update(&mut slice) {
+        if let Ok(()) = &hasher.update(&mut msg1) {
             if let Ok(result) = &hasher.digest() {
                 let hash_str = to_hex_str(result);
                 assert_eq!(
                     hash_str,
-                    "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+                    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
                 );
                 println!("{}", hash_str);
+            }
+        }
+        if let Ok(()) = &hasher.update(&mut msg2) {
+            if let Ok(result) = &hasher.digest() {
+                let hash_str = to_hex_str(result);
+                assert_eq!(
+                    hash_str,
+                    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+                );
+                println!("{}", hash_str);
+            }
+        }
+
+        unsafe {
+            let mut slice = std::slice::from_raw_parts_mut(msg3.as_mut_ptr(), msg3.len());
+            if let Ok(()) = &hasher.update(&mut slice) {
+                if let Ok(result) = &hasher.digest() {
+                    let hash_str = to_hex_str(result);
+                    assert_eq!(
+                        hash_str,
+                        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+                    );
+                    println!("{}", hash_str);
+                }
             }
         }
     }

@@ -1,11 +1,9 @@
-use std::collections::HashSet;
 use std::io::prelude::*;
 use std::os::windows::fs::MetadataExt;
-use std::path::PathBuf;
 
 use spotlight::*;
 
-const READ_BUF_SIZE: usize = 4096;
+const READ_BUF_SIZE: usize = 8192;
 const HASH_SIZE: usize = 32; // SHA256 is 32 bytes
 const HASH_ALGORITHM: &'static str = "SHA256";
 const SAVE_DIR: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight"#;
@@ -115,8 +113,9 @@ fn main() {
         })
     };
 
-    let mut search_set: HashSet<_> = if spotlight_file.is_file() {
-        let mut file = std::fs::File::open(spotlight_file).unwrap();
+    let mut search_set: std::collections::HashSet<_> = if spotlight_file.is_file() {
+        let file = std::fs::File::open(spotlight_file).unwrap();
+        let mut file = std::io::BufReader::new(file);
         let mut buf: [u8; HASH_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
 
         std::iter::from_fn(|| {
@@ -133,7 +132,7 @@ fn main() {
             .collect()
     };
 
-    let mut new_wallpaper: Option<PathBuf> = None;
+    let mut new_wallpaper: Option<std::path::PathBuf> = None;
 
     for entry in get_entries(spotlight_dir) {
         if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {

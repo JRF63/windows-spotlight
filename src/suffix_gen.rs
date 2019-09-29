@@ -53,25 +53,29 @@ impl Iterator for SuffixGenerator {
     }
 }
 
-#[test]
-fn test_suffix_gen() {
-    let path_buf = PathBuf::from(r#"test-"#);
-    let ext = "test";
-    let mut it = SuffixGenerator::new(path_buf.clone(), ext);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_suffix_gen() {
+        let path_buf = PathBuf::from(r#"test-"#);
+        let ext = "test";
+        let mut it = SuffixGenerator::new(path_buf.clone(), ext);
 
-    assert_eq!(Some("test-a.test"), it.nth(0).unwrap().to_str());
-    assert_eq!(Some("test-z.test"), it.nth(24).unwrap().to_str());
-    assert_eq!(Some("test-aa.test"), it.nth(0).unwrap().to_str());
-    assert_eq!(Some("test-az.test"), it.nth(24).unwrap().to_str());
-    assert_eq!(Some("test-ba.test"), it.nth(0).unwrap().to_str());
-    assert_eq!(Some("test-zz.test"), it.nth(648).unwrap().to_str());
-    assert_eq!(Some("test-aaa.test"), it.nth(0).unwrap().to_str());
-    assert_eq!(Some("test-aba.test"), it.nth(25).unwrap().to_str());
-    assert_eq!(Some("test-abb.test"), it.nth(0).unwrap().to_str());
+        assert_eq!(Some("test-a.test"), it.nth(0).unwrap().to_str());
+        assert_eq!(Some("test-z.test"), it.nth(24).unwrap().to_str());
+        assert_eq!(Some("test-aa.test"), it.nth(0).unwrap().to_str());
+        assert_eq!(Some("test-az.test"), it.nth(24).unwrap().to_str());
+        assert_eq!(Some("test-ba.test"), it.nth(0).unwrap().to_str());
+        assert_eq!(Some("test-zz.test"), it.nth(648).unwrap().to_str());
+        assert_eq!(Some("test-aaa.test"), it.nth(0).unwrap().to_str());
+        assert_eq!(Some("test-aba.test"), it.nth(25).unwrap().to_str());
+        assert_eq!(Some("test-abb.test"), it.nth(0).unwrap().to_str());
 
-    it = SuffixGenerator::new(path_buf.clone(), ext);
-    assert_eq!(Some("test-zz.test"), it.nth(702 - 1).unwrap().to_str());
+        it = SuffixGenerator::new(path_buf.clone(), ext);
+        assert_eq!(Some("test-zz.test"), it.nth(702 - 1).unwrap().to_str());
 
-    it = SuffixGenerator::new(path_buf.clone(), ext);
-    assert_eq!(Some("test-baa.test"), it.nth(1378).unwrap().to_str());
+        it = SuffixGenerator::new(path_buf.clone(), ext);
+        assert_eq!(Some("test-baa.test"), it.nth(1378).unwrap().to_str());
+    }
 }
