@@ -12,7 +12,7 @@ pub fn set_desktop_wallpaper(path: std::path::PathBuf) {
             winuser::SPI_SETDESKWALLPAPER,
             0,
             wchar_str.as_mut_ptr() as *mut std::ffi::c_void,
-            winuser::SPIF_UPDATEINIFILE | winuser::SPIF_SENDCHANGE
+            winuser::SPIF_UPDATEINIFILE | winuser::SPIF_SENDCHANGE,
         );
     }
 }

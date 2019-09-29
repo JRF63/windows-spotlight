@@ -1,15 +1,13 @@
 extern crate chrono;
 
-use std::io::prelude::*;
 use std::collections::HashSet;
-use std::fs::DirEntry;
+use std::io::prelude::*;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
 use chrono::TimeZone;
 use spotlight::*;
 
-const BATCH_SIZE: usize = 8;
 const READ_BUF_SIZE: usize = 4096;
 const HASH_SIZE: usize = 32; // SHA256 is 32 bytes
 const HASH_ALGORITHM: &'static str = "SHA256";
@@ -20,7 +18,9 @@ const SAVED_HASH: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight\spotlight
 #[inline(always)]
 fn is_jpg(buf: &[u8]) -> bool {
     // The JPG header is in the first 12 bytes of the file
-    const JPG_SIG: [u8; 12] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
+    const JPG_SIG: [u8; 12] = [
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+    ];
     buf == JPG_SIG
 }
 
@@ -33,7 +33,11 @@ fn is_landscape(buf: &[u8]) -> bool {
 }
 
 #[inline]
-fn hash_if_landscape_jpg(path: PathBuf, hasher: &mut hasher::WinHasher, buf: &mut [u8; READ_BUF_SIZE]) -> Option<Vec<u8>> {
+fn hash_if_landscape_jpg(
+    path: PathBuf,
+    hasher: &mut hasher::WinHasher,
+    buf: &mut [u8; READ_BUF_SIZE],
+) -> Option<Vec<u8>> {
     const JPG_SIG_END: usize = 12;
     const RESOLUTION_START: usize = 163;
     const RESOLUTION_END: usize = 167;
@@ -81,7 +85,10 @@ fn test_jpg_hashing() {
     let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     let digest = hash_if_landscape_jpg(path, &mut hasher, &mut buf).unwrap();
     let hash_string: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
-    assert_eq!(hash_string, "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2");
+    assert_eq!(
+        hash_string,
+        "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2"
+    );
     dbg!(hash_string);
 }
 
@@ -95,36 +102,6 @@ fn read_saved_hashes(mut file: std::fs::File) -> Vec<Vec<u8>> {
     result
 }
 
-fn hash_saved_images(entries: &[DirEntry]) -> HashSet<Vec<u8>> {
-    let mut result: HashSet<Vec<u8>> = HashSet::new();
-    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
-    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-    
-    for entry in entries {
-        if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
-            result.insert(digest);
-        }
-    }
-    result
-}
-
-fn find_new_image(search_set: &HashSet<Vec<u8>>, entries: &[DirEntry]) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
-    let mut result = vec![];
-    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
-    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-
-    for entry in entries {
-        if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
-            if !search_set.contains(&digest) {
-                let path = entry.path();
-                let creation_time = entry.metadata().unwrap().created().unwrap();
-                result.push((path, digest, creation_time));
-            }
-        }
-    }
-    result
-}
-
 fn main() {
     let save_dir = std::path::Path::new(SAVE_DIR);
     let spotlight_dir = std::path::Path::new(SPOTLIGHT_DIR);
@@ -133,23 +110,21 @@ fn main() {
     let mut search_set: HashSet<Vec<u8>> = HashSet::new();
     let mut new_images = vec![];
 
+    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+
     // exclude subdirectories
-    let is_file_filter = |entry: std::io::Result<DirEntry>| -> Option<DirEntry> {
-        if let Ok(entry) = entry {
-            if let Ok(metadata) = entry.metadata() {
-                if metadata.is_file() {
-                    return Some(entry);
+    let get_entries = |path: &std::path::Path| -> _ {
+        path.read_dir().unwrap().filter_map(|entry| {
+            if let Ok(entry) = entry {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        return Some(entry);
+                    }
                 }
             }
-        }
-        None
-    };
-
-    // make a vector for chunking
-    let to_file_vec = |path: &std::path::Path| -> Vec<_> {
-        path.read_dir().unwrap()
-        .filter_map(is_file_filter)
-        .collect::<Vec<_>>()
+            None
+        })
     };
 
     if spotlight_file.is_file() {
@@ -160,17 +135,21 @@ fn main() {
             search_set.insert(hash);
         }
     } else {
-        let save_dir_entries = to_file_vec(save_dir);
-        for batch in save_dir_entries.chunks(BATCH_SIZE) {
-            let set_batch = hash_saved_images(batch);
-            search_set.extend(set_batch);
+        for entry in get_entries(save_dir) {
+            if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
+                search_set.insert(digest);
+            }
         }
     }
 
-    let spotlight_dir_entries = to_file_vec(spotlight_dir);
-    for batch in spotlight_dir_entries.chunks(BATCH_SIZE) {
-        let mut image_batch = find_new_image(&search_set, batch);
-        new_images.append(&mut image_batch);
+    for entry in get_entries(spotlight_dir) {
+        if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
+            if !search_set.contains(&digest) {
+                let path = entry.path();
+                let creation_time = entry.metadata().unwrap().created().unwrap();
+                new_images.push((path, digest, creation_time));
+            }
+        }
     }
 
     let mut new_wallpaper: Option<PathBuf> = None;
@@ -179,11 +158,9 @@ fn main() {
         // continue only if digest is not in set
         if search_set.insert(digest) {
             if let Ok(duration) = sys_time.duration_since(SystemTime::UNIX_EPOCH) {
-                
                 let nsecs = duration.as_nanos();
                 let datetime = chrono::Local.timestamp_nanos(nsecs as i64);
                 let date_str = datetime.format("%Y%m%d").to_string();
-                
                 let mut path = save_dir.to_path_buf();
                 path.push(date_str);
 

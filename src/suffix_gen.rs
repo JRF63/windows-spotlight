@@ -3,24 +3,22 @@ use std::path::PathBuf;
 pub struct SuffixGenerator {
     path_array: Vec<u8>,
     original_size: usize,
-    extension: String
+    extension: String,
 }
 
 impl SuffixGenerator {
     pub fn new(path: PathBuf, ext: &str) -> SuffixGenerator {
-        let mut path_array: Vec<u8> = path.into_os_string()
-                                          .into_string().unwrap()
-                                          .into_bytes();
+        let mut path_array: Vec<u8> = path.into_os_string().into_string().unwrap().into_bytes();
         let original_size = path_array.len() as usize;
         path_array.push(96u8);
 
         let mut extension = String::from(".");
         extension.push_str(ext);
-        
+
         return SuffixGenerator {
             path_array,
             original_size,
-            extension
+            extension,
         };
     }
 
@@ -60,7 +58,7 @@ fn test_suffix_gen() {
     let path_buf = PathBuf::from(r#"test-"#);
     let ext = "test";
     let mut it = SuffixGenerator::new(path_buf.clone(), ext);
-    
+
     assert_eq!(Some("test-a.test"), it.nth(0).unwrap().to_str());
     assert_eq!(Some("test-z.test"), it.nth(24).unwrap().to_str());
     assert_eq!(Some("test-aa.test"), it.nth(0).unwrap().to_str());
@@ -70,7 +68,7 @@ fn test_suffix_gen() {
     assert_eq!(Some("test-aaa.test"), it.nth(0).unwrap().to_str());
     assert_eq!(Some("test-aba.test"), it.nth(25).unwrap().to_str());
     assert_eq!(Some("test-abb.test"), it.nth(0).unwrap().to_str());
-    
+
     it = SuffixGenerator::new(path_buf.clone(), ext);
     assert_eq!(Some("test-zz.test"), it.nth(702 - 1).unwrap().to_str());
 
