@@ -11,7 +11,7 @@ pub fn set_desktop_wallpaper(path: std::path::PathBuf) {
         winuser::SystemParametersInfoW(
             winuser::SPI_SETDESKWALLPAPER,
             0,
-            wchar_str.as_mut_ptr() as *mut std::ffi::c_void,
+            wchar_str.as_mut_ptr() as *mut winapi::ctypes::c_void,
             winuser::SPIF_UPDATEINIFILE | winuser::SPIF_SENDCHANGE,
         );
     }

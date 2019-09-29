@@ -1,11 +1,8 @@
-extern crate chrono;
-
 use std::collections::HashSet;
 use std::io::prelude::*;
+use std::os::windows::fs::MetadataExt;
 use std::path::PathBuf;
-use std::time::SystemTime;
 
-use chrono::TimeZone;
 use spotlight::*;
 
 const READ_BUF_SIZE: usize = 4096;
@@ -77,49 +74,29 @@ fn hash_if_landscape_jpg<P: AsRef<std::path::Path>>(
     None
 }
 
-#[test]
-fn test_jpg_hashing() {
-    let path = std::path::PathBuf::from(r#"C:\Users\Rafael\Pictures\Spotlight\20190713a.jpg"#);
-    assert!(path.is_file());
-    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
-    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-    let digest = hash_if_landscape_jpg(path, &mut hasher, &mut buf).unwrap();
-    let hash_string: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
-    assert_eq!(
-        hash_string,
-        "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2"
-    );
-    dbg!(hash_string);
-}
-
-fn read_saved_hashes<P: AsRef<std::path::Path>>(path: P) -> Vec<Vec<u8>> {
-    let mut file = std::fs::File::open(path).unwrap();
-    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-    let mut result: Vec<Vec<u8>> = vec![];
-
-    while let Ok(mut read_size) = file.read(&mut buf) {
-        if read_size == 0 {
-            break;
-        }
-        let mut start = 0;
-        while read_size >= HASH_SIZE {
-            result.push(buf[start..start + HASH_SIZE].to_vec());
-            start += HASH_SIZE;
-            read_size -= HASH_SIZE;
-        }
-        file.seek(std::io::SeekFrom::Current(-(read_size as i64)))
-            .unwrap();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_jpg_hashing() {
+        let path = std::path::PathBuf::from(r#"C:\Users\Rafael\Pictures\Spotlight\20190713a.jpg"#);
+        assert!(path.is_file());
+        let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+        let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        let digest = hash_if_landscape_jpg(path, &mut hasher, &mut buf).unwrap();
+        let hash_string: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
+        assert_eq!(
+            hash_string,
+            "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2"
+        );
+        dbg!(hash_string);
     }
-    result
 }
 
 fn main() {
     let save_dir = std::path::Path::new(SAVE_DIR);
     let spotlight_dir = std::path::Path::new(SPOTLIGHT_DIR);
     let spotlight_file = std::path::Path::new(SAVED_HASH);
-
-    let mut search_set: HashSet<Vec<u8>> = HashSet::new();
-    let mut new_images = vec![];
 
     let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
     let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
@@ -138,50 +115,42 @@ fn main() {
         })
     };
 
-    if spotlight_file.is_file() {
-        let hash_list = read_saved_hashes(spotlight_file);
-        search_set.reserve(hash_list.len());
-        for hash in hash_list {
-            search_set.insert(hash);
-        }
-    } else {
-        for entry in get_entries(save_dir) {
-            if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
-                search_set.insert(digest);
+    let mut search_set: HashSet<_> = if spotlight_file.is_file() {
+        let mut file = std::fs::File::open(spotlight_file).unwrap();
+        let mut buf: [u8; HASH_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+
+        std::iter::from_fn(|| {
+            if let Ok(_) = file.read_exact(&mut buf) {
+                Some(buf.to_vec())
+            } else {
+                None
             }
-        }
-    }
+        })
+        .collect()
+    } else {
+        get_entries(save_dir)
+            .filter_map(|entry| hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf))
+            .collect()
+    };
+
+    let mut new_wallpaper: Option<PathBuf> = None;
 
     for entry in get_entries(spotlight_dir) {
         if let Some(digest) = hash_if_landscape_jpg(entry.path(), &mut hasher, &mut buf) {
             if !search_set.contains(&digest) {
-                let path = entry.path();
-                let creation_time = entry.metadata().unwrap().created().unwrap();
-                new_images.push((path, digest, creation_time));
-            }
-        }
-    }
+                if search_set.insert(digest) {
+                    let create_time = entry.metadata().unwrap().creation_time();
+                    let mut path = save_dir.to_path_buf();
+                    path.push(datetime::datetime_str(create_time));
 
-    let mut new_wallpaper: Option<PathBuf> = None;
-
-    for (src_path, digest, sys_time) in new_images {
-        // continue only if digest is not in set
-        if search_set.insert(digest) {
-            if let Ok(duration) = sys_time.duration_since(SystemTime::UNIX_EPOCH) {
-                let nsecs = duration.as_nanos();
-                let datetime = chrono::Local.timestamp_nanos(nsecs as i64);
-                let date_str = datetime.format("%Y%m%d").to_string();
-                let mut path = save_dir.to_path_buf();
-                path.push(date_str);
-
-                let suffixes = suffix_gen::SuffixGenerator::new(path, "jpg");
-
-                for dst_path in suffixes.take(100) {
-                    if !dst_path.is_file() {
-                        // dbg!(&dst_path);
-                        std::fs::copy(&src_path, &dst_path).unwrap();
-                        new_wallpaper = Some(dst_path);
-                        break;
+                    let suffixes = suffix_gen::SuffixGenerator::new(path, "jpg");
+                    for dst_path in suffixes.take(100) {
+                        if !dst_path.is_file() {
+                            // dbg!(&dst_path);
+                            std::fs::copy(entry.path(), &dst_path).unwrap();
+                            new_wallpaper = Some(dst_path);
+                            break;
+                        }
                     }
                 }
             }
