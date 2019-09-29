@@ -33,8 +33,8 @@ fn is_landscape(buf: &[u8]) -> bool {
 }
 
 #[inline]
-fn hash_if_landscape_jpg(
-    path: PathBuf,
+fn hash_if_landscape_jpg<P: AsRef<std::path::Path>>(
+    path: P,
     hasher: &mut hasher::WinHasher,
     buf: &mut [u8; READ_BUF_SIZE],
 ) -> Option<Vec<u8>> {
@@ -92,12 +92,23 @@ fn test_jpg_hashing() {
     dbg!(hash_string);
 }
 
-fn read_saved_hashes(mut file: std::fs::File) -> Vec<Vec<u8>> {
-    let mut buf: [u8; HASH_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+fn read_saved_hashes<P: AsRef<std::path::Path>>(path: P) -> Vec<Vec<u8>> {
+    let mut file = std::fs::File::open(path).unwrap();
+    let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     let mut result: Vec<Vec<u8>> = vec![];
 
-    while let Ok(_) = file.read_exact(&mut buf) {
-        result.push(buf.to_vec());
+    while let Ok(mut read_size) = file.read(&mut buf) {
+        if read_size == 0 {
+            break;
+        }
+        let mut start = 0;
+        while read_size >= HASH_SIZE {
+            result.push(buf[start..start + HASH_SIZE].to_vec());
+            start += HASH_SIZE;
+            read_size -= HASH_SIZE;
+        }
+        file.seek(std::io::SeekFrom::Current(-(read_size as i64)))
+            .unwrap();
     }
     result
 }
@@ -128,8 +139,7 @@ fn main() {
     };
 
     if spotlight_file.is_file() {
-        let file = std::fs::File::open(spotlight_file).unwrap();
-        let hash_list = read_saved_hashes(file);
+        let hash_list = read_saved_hashes(spotlight_file);
         search_set.reserve(hash_list.len());
         for hash in hash_list {
             search_set.insert(hash);
