@@ -11,8 +11,8 @@ use spotlight::*;
 
 const BATCH_SIZE: usize = 8;
 const READ_BUF_SIZE: usize = 4096;
-const HASH_ALGORITHM: &'static str = "SHA256";
 const HASH_SIZE: usize = 32; // SHA256 is 32 bytes
+const HASH_ALGORITHM: &'static str = "SHA256";
 const SAVE_DIR: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight"#;
 const SPOTLIGHT_DIR: &'static str = r#"C:\Users\Rafael\AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets"#;
 const SAVED_HASH: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight\spotlight.hashes"#;
@@ -85,7 +85,7 @@ fn test_jpg_hashing() {
     dbg!(hash_string);
 }
 
-fn read_saved_hash(mut file: std::fs::File) -> Vec<Vec<u8>> {
+fn read_saved_hashes(mut file: std::fs::File) -> Vec<Vec<u8>> {
     let mut buf: [u8; HASH_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     let mut result: Vec<Vec<u8>> = vec![];
 
@@ -154,7 +154,7 @@ fn main() {
 
     if spotlight_file.is_file() {
         let file = std::fs::File::open(spotlight_file).unwrap();
-        let hash_list = read_saved_hash(file);
+        let hash_list = read_saved_hashes(file);
         search_set.reserve(hash_list.len());
         for hash in hash_list {
             search_set.insert(hash);
