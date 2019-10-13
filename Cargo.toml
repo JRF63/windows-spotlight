@@ -4,14 +4,6 @@ version = "0.1.0"
 authors = ["Joseph Rafael Ferrer <rafael2x0@gmail.com>"]
 edition = "2018"
 
-[lib]
-name = "spotlight"
-path = "src/lib.rs"
-
-[[bin]]
-name = "spotlight"
-path = "src/main.rs"
-
 [profile.release]
 lto = true
 panic = 'abort'

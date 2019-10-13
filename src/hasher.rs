@@ -1,6 +1,40 @@
 extern crate winapi;
 
 use winapi::shared::*;
+use super::HASH_SIZE;
+
+pub struct ShaHasher {
+    data_copy: [u8; HASH_SIZE]
+}
+
+impl std::hash::Hasher for ShaHasher {
+    // reinterprets the first 8 bytes as u64
+    fn finish(&self) -> u64 {
+        unsafe {
+            let ptr: *const u64 = self.data_copy.as_ptr().cast();
+            *ptr
+        }
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.data_copy.copy_from_slice(&bytes[..HASH_SIZE]);
+    }
+}
+
+pub struct ShaState;
+
+impl Default for ShaState {
+    fn default() -> Self {
+        ShaState {}
+    }
+}
+
+impl std::hash::BuildHasher for ShaState {
+    type Hasher = ShaHasher;
+    fn build_hasher(&self) -> Self::Hasher {
+        ShaHasher { data_copy: [0; HASH_SIZE] }
+    }
+}
 
 #[allow(dead_code)]
 pub struct WinHasher {
