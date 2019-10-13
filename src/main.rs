@@ -1,15 +1,17 @@
-use std::io::prelude::*;
-use std::os::windows::fs::MetadataExt;
-use std::collections::HashSet;
+extern crate winapi;
 
 mod datetime;
-mod hasher;
+mod sha256;
 mod suffix_gen;
 mod wallpaper;
 
+use sha256::CryptHash;
+use sha256::HASH_SIZE;
+use std::collections::HashSet;
+use std::io::prelude::*;
+use std::os::windows::fs::MetadataExt;
+
 const READ_BUF_SIZE: usize = 8192;
-const HASH_SIZE: usize = 32; // SHA256 is 32 bytes
-const HASH_ALGORITHM: &'static str = "SHA256";
 const SAVE_DIR: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight"#;
 const SPOTLIGHT_DIR: &'static str = r#"C:\Users\Rafael\AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets"#;
 const SAVED_HASH: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight\spotlight.hashes"#;
@@ -34,9 +36,9 @@ fn is_landscape(buf: &[u8]) -> bool {
 #[inline]
 fn hash_if_landscape_jpg<P: AsRef<std::path::Path>>(
     path: P,
-    hasher: &mut hasher::WinHasher,
+    hasher: &mut sha256::WinHasher,
     buf: &mut [u8; READ_BUF_SIZE],
-) -> Option<Vec<u8>> {
+) -> Option<CryptHash> {
     const JPG_SIG_END: usize = 12;
     const RESOLUTION_START: usize = 163;
     const RESOLUTION_END: usize = 167;
@@ -83,10 +85,10 @@ mod tests {
     fn test_jpg_hashing() {
         let path = std::path::PathBuf::from(r#"C:\Users\Rafael\Pictures\Spotlight\20190713a.jpg"#);
         assert!(path.is_file());
-        let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+        let mut hasher = sha256::hash_fn_object();
         let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         let digest = hash_if_landscape_jpg(path, &mut hasher, &mut buf).unwrap();
-        let hash_string: String = digest.iter().map(|&i| format!("{:02x}", i)).collect();
+        let hash_string: String = digest.to_hex_str();
         assert_eq!(
             hash_string,
             "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2"
@@ -100,7 +102,7 @@ fn main() {
     let spotlight_dir = std::path::Path::new(SPOTLIGHT_DIR);
     let spotlight_file = std::path::Path::new(SAVED_HASH);
 
-    let mut hasher = hasher::WinHasher::new(HASH_ALGORITHM).unwrap();
+    let mut hasher = sha256::hash_fn_object();
     let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
 
     // exclude subdirectories
@@ -117,14 +119,14 @@ fn main() {
         })
     };
 
-    let mut search_set: HashSet<Vec<u8>, hasher::ShaState> = if spotlight_file.is_file() {
+    let mut search_set: HashSet<CryptHash, sha256::CryptState> = if spotlight_file.is_file() {
         let file = std::fs::File::open(spotlight_file).unwrap();
         let mut file = std::io::BufReader::new(file);
         let mut buf: [u8; HASH_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
 
         std::iter::from_fn(|| {
             if let Ok(_) = file.read_exact(&mut buf) {
-                Some(buf.to_vec())
+                Some(CryptHash::new(buf.clone()))
             } else {
                 None
             }
@@ -164,7 +166,7 @@ fn main() {
         wallpaper::set_desktop_wallpaper(new_wallpaper);
         let mut file = std::fs::File::create(spotlight_file).unwrap();
         for hash in search_set {
-            file.write_all(&hash).unwrap();
+            file.write_all(hash.as_bytes()).unwrap();
         }
     }
 
