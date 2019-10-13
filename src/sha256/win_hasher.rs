@@ -35,7 +35,7 @@ impl WinHasher {
                     std::ptr::null_mut(),
                     bcrypt::BCRYPT_HASH_REUSABLE_FLAG,
                 ) {
-                    ntstatus::STATUS_SUCCESS => rollback += 1,
+                    ntstatus::STATUS_SUCCESS => rollback = 1,
                     e => return Err(e),
                 };
 
@@ -48,7 +48,7 @@ impl WinHasher {
                     0,
                     bcrypt::BCRYPT_HASH_REUSABLE_FLAG,
                 ) {
-                    ntstatus::STATUS_SUCCESS => rollback += 1,
+                    ntstatus::STATUS_SUCCESS => rollback = 2,
                     e => return Err(e),
                 };
 
