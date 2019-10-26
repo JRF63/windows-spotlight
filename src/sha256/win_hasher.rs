@@ -1,11 +1,10 @@
-use super::{CryptHash, HASH_BUFFER_SIZE, HASH_SIZE};
+use super::{CryptHash, HASH_SIZE};
 use winapi::shared::*;
 
 #[allow(dead_code)]
 pub struct WinHasher {
     alg_handle: bcrypt::BCRYPT_ALG_HANDLE,
     hash_handle: bcrypt::BCRYPT_HASH_HANDLE,
-    hash_data: Vec<u8>,
 }
 
 fn to_wchar(str_id: &str) -> Vec<u16> {
@@ -22,7 +21,6 @@ impl WinHasher {
         let mut winhasher = WinHasher {
             alg_handle: std::ptr::null_mut(),
             hash_handle: std::ptr::null_mut(),
-            hash_data: Vec::with_capacity(HASH_BUFFER_SIZE),
         };
 
         let mut rollback = 0;
@@ -42,8 +40,8 @@ impl WinHasher {
                 match bcrypt::BCryptCreateHash(
                     winhasher.alg_handle,
                     &mut winhasher.hash_handle,
-                    winhasher.hash_data.as_mut_ptr(),
-                    HASH_BUFFER_SIZE as _,
+                    std::ptr::null_mut(),
+                    0,
                     std::ptr::null_mut(),
                     0,
                     bcrypt::BCRYPT_HASH_REUSABLE_FLAG,
@@ -128,18 +126,6 @@ mod tests {
             );
             assert!(result == ntstatus::STATUS_SUCCESS);
             assert!(hash_result_size == HASH_SIZE as u32);
-
-            let mut hash_data_size: u32 = 0;
-            let result = bcrypt::BCryptGetProperty(
-                hasher.alg_handle,
-                to_wchar(bcrypt::BCRYPT_OBJECT_LENGTH).as_ptr(),
-                (&mut hash_data_size as *mut u32) as *mut u8,
-                32, // size of DWORD
-                &mut data,
-                0,
-            );
-            assert!(result == ntstatus::STATUS_SUCCESS);
-            assert!(hash_data_size == HASH_BUFFER_SIZE as u32);
         }
     }
 

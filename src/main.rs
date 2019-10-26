@@ -12,9 +12,9 @@ use std::io::prelude::*;
 use std::os::windows::fs::MetadataExt;
 
 const READ_BUF_SIZE: usize = 8192;
-const SAVE_DIR: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight"#;
-const SPOTLIGHT_DIR: &'static str = r#"C:\Users\Rafael\AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets"#;
-const SAVED_HASH: &'static str = r#"C:\Users\Rafael\Pictures\Spotlight\spotlight.hashes"#;
+const SAVE_DIR: &'static str = r#"C:\Users\YourUsername\savedir"#;
+const SPOTLIGHT_DIR: &'static str = r#"C:\Users\YourUsername\AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_xxxxxxxxxxxxx\LocalState\Assets"#;
+const SAVED_HASH: &'static str = r#"C:\Users\YourUsername\savedir\hashfile"#;
 
 #[inline(always)]
 fn is_jpg(buf: &[u8]) -> bool {
@@ -76,25 +76,6 @@ fn hash_if_landscape_jpg<P: AsRef<std::path::Path>>(
     }
     // not a landscape JPG
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_jpg_hashing() {
-        let path = std::path::PathBuf::from(r#"C:\Users\Rafael\Pictures\Spotlight\20190713a.jpg"#);
-        assert!(path.is_file());
-        let mut hasher = sha256::hash_fn_object();
-        let mut buf: [u8; READ_BUF_SIZE] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-        let digest = hash_if_landscape_jpg(path, &mut hasher, &mut buf).unwrap();
-        let hash_string: String = digest.to_hex_str();
-        assert_eq!(
-            hash_string,
-            "3509c4b6f09e861bcdda4c97feb2106c3d6baba7880444783623e420e06003b2"
-        );
-        dbg!(hash_string);
-    }
 }
 
 fn main() {

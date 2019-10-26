@@ -3,7 +3,6 @@ mod win_hasher;
 pub use win_hasher::WinHasher;
 
 pub const HASH_SIZE: usize = 32; // SHA256 is 32 bytes
-const HASH_BUFFER_SIZE: usize = 326;
 const HASH_ALGORITHM: &'static str = "SHA256";
 
 pub fn hash_fn_object() -> WinHasher {
